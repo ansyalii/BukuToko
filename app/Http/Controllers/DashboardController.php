@@ -7,12 +7,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Transaksi;
 use App\Models\Product;
+use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
     public function index()
     {
-        $userId = Auth()->id();
+        $userId = Auth::id();
 
         $totalTransaksi = Transaksi::where('user_id', $userId)->count();
         $transaksi = Transaksi::with('product')
@@ -25,97 +26,91 @@ class DashboardController extends Controller
         $total_pemasukan = $transaksi->where('jenis', 'pemasukan')->sum('total_harga');
         $total_pengeluaran = $transaksi->where('jenis', 'pengeluaran')->sum('total_harga');
 
-        // Hitung modal hanya untuk pemasukan (biaya beli barang yang dijual)
+        // Hitung modal hanya untuk pemasukan
         $total_modal = $transaksi->where('jenis', 'pemasukan')->sum(function ($trx) {
             return $trx->details->sum(fn($d) => $d->product->harga_beli * $d->jumlah);
         });
 
         $pendapatan_bersih = $total_pemasukan - $total_modal;
 
-
         // Produk Hampir Habis
         $produkMenipis = Product::where('stok', '<=', 5)
             ->where('user_id', $userId)
             ->get();
 
-        // Chart 1: Frekuensi Penjualan Mingguan + Persentase
-        $totalFrekuensiMingguan = DB::table('transaksi_details')
+        // Tentukan range minggu ini
+        $startOfWeek = now()->startOfWeek();
+        $endOfWeek = now()->endOfWeek();
+
+        // Ambil semua transaksi pemasukan minggu ini
+        $transaksiMingguan = DB::table('transaksi_details')
             ->join('transaksis', 'transaksi_details.transaksi_id', '=', 'transaksis.id')
             ->where('transaksis.user_id', $userId)
             ->where('transaksis.jenis', 'pemasukan')
-            ->whereBetween('transaksis.created_at', [now()->startOfWeek(), now()->endOfWeek()])
-            ->distinct(DB::raw('DATE(transaksis.created_at)'))
-            ->count();
+            ->whereBetween('transaksis.created_at', [$startOfWeek, $endOfWeek])
+            ->select('transaksi_details.*', 'transaksis.created_at')
+            ->get();
 
+        // Update frekuensi_penjualan per produk
+        $produkFrekuensi = $transaksiMingguan
+            ->groupBy('product_id')
+            ->map(function ($items, $productId) {
+                $itemsArray = $items->toArray(); // Konversi ke array
+                $frekuensi = count(array_unique(array_map(fn($t) => date('Y-m-d', strtotime($t->created_at)), $itemsArray)));
+                return ['product_id' => $productId, 'frekuensi' => $frekuensi];
+            });
 
-        $produkChartFrekuensi = DB::table('transaksi_details')
-            ->join('products', function ($join) use ($userId) {
-                $join->on('transaksi_details.product_id', '=', 'products.id')
-                    ->where('products.user_id', $userId);
-            })
-            ->join('transaksis', function ($join) use ($userId) {
-                $join->on('transaksi_details.transaksi_id', '=', 'transaksis.id')
-                    ->where('transaksis.user_id', $userId)
-                    ->where('transaksis.jenis', 'pemasukan');
-            })
-            ->whereBetween('transaksis.created_at', [now()->startOfWeek(), now()->endOfWeek()])
-            ->select('products.nama', DB::raw('COUNT(DISTINCT DATE(transaksis.created_at)) as frekuensi'))
-            ->groupBy('products.nama')
-            ->orderByDesc('frekuensi')
+        foreach ($produkFrekuensi as $data) {
+            Product::where('id', $data['product_id'])
+                ->update(['frekuensi_penjualan' => $data['frekuensi']]);
+        }
+
+        // Update kecepatan_habis per produk
+        $produkKecepatan = $transaksiMingguan
+            ->groupBy('product_id')
+            ->map(function ($items, $productId) {
+                $itemsArray = $items->toArray(); // Konversi ke array
+                $totalTerjual = array_sum(array_map(fn($t) => $t->jumlah, $itemsArray));
+                $hariTerjual = count(array_unique(array_map(fn($t) => date('Y-m-d', strtotime($t->created_at)), $itemsArray)));
+                $kecepatan = $hariTerjual > 0 ? $totalTerjual / $hariTerjual : 0;
+                return ['product_id' => $productId, 'kecepatan' => round($kecepatan, 2)];
+            });
+
+        foreach ($produkKecepatan as $data) {
+            Product::where('id', $data['product_id'])
+                ->update(['kecepatan_habis' => $data['kecepatan']]);
+        }
+
+        // Ambil data chart dari tabel products
+        $produkChartFrekuensi = Product::where('user_id', $userId)
+            ->orderByDesc('frekuensi_penjualan')
             ->limit(5)
             ->get()
-            ->map(function ($item) use ($totalFrekuensiMingguan) {
+            ->map(function ($item) use ($transaksiMingguan) {
+                $totalFrekuensi = $transaksiMingguan->count();
                 return [
                     'nama' => $item->nama,
-                    'frekuensi' => (int) $item->frekuensi,
-                    'persentase_frekuensi' => $totalFrekuensiMingguan > 0
-                        ? round(($item->frekuensi / $totalFrekuensiMingguan) * 100, 2)
+                    'frekuensi' => $item->frekuensi_penjualan,
+                    'persentase_frekuensi' => $totalFrekuensi > 0
+                        ? round(($item->frekuensi_penjualan / $totalFrekuensi) * 100, 2)
                         : 0
                 ];
             });
 
-        // Chart 2: Kecepatan Barang Habis + Persentase
-        $totalTerjualMingguan = DB::table('transaksi_details')
-            ->join('transaksis', 'transaksi_details.transaksi_id', '=', 'transaksis.id')
-            ->where('transaksis.user_id', $userId)
-            ->where('transaksis.jenis', 'pemasukan')
-            ->whereBetween('transaksis.created_at', [now()->startOfWeek(), now()->endOfWeek()])
-            ->sum('transaksi_details.jumlah');
-
-
-        $produkChartKecepatan = DB::table('transaksi_details')
-            ->join('products', function ($join) use ($userId) {
-                $join->on('transaksi_details.product_id', '=', 'products.id')
-                    ->where('products.user_id', $userId);
-            })
-            ->join('transaksis', function ($join) use ($userId) {
-                $join->on('transaksi_details.transaksi_id', '=', 'transaksis.id')
-                    ->where('transaksis.user_id', $userId)
-                    ->where('transaksis.jenis', 'pemasukan');
-            })
-            ->whereBetween('transaksis.created_at', [now()->startOfWeek(), now()->endOfWeek()])
-            ->select(
-                'products.nama',
-                DB::raw('SUM(transaksi_details.jumlah) as total_terjual'),
-                DB::raw('COUNT(DISTINCT DATE(transaksis.created_at)) as hari_terjual')
-            )
-            ->groupBy('products.nama')
-            ->orderByDesc(DB::raw('SUM(transaksi_details.jumlah) / NULLIF(COUNT(DISTINCT DATE(transaksis.created_at)),0)'))
+        $produkChartKecepatan = Product::where('user_id', $userId)
+            ->orderByDesc('kecepatan_habis')
             ->limit(5)
             ->get()
-            ->map(function ($item) use ($totalTerjualMingguan) {
-                $kecepatan = $item->hari_terjual > 0
-                    ? $item->total_terjual / $item->hari_terjual
-                    : 0;
+            ->map(function ($item) use ($transaksiMingguan) {
+                $totalTerjual = $transaksiMingguan->sum('jumlah');
                 return [
                     'nama' => $item->nama,
-                    'kecepatan' => round($kecepatan, 2),
-                    'persentase_terjual' => $totalTerjualMingguan > 0
-                        ? round(($item->total_terjual / $totalTerjualMingguan) * 100, 2)
+                    'kecepatan' => $item->kecepatan_habis,
+                    'persentase_terjual' => $totalTerjual > 0
+                        ? round(($item->kecepatan_habis / $totalTerjual) * 100, 2)
                         : 0
                 ];
             });
-
 
         return view('dashboard.index', compact(
             'totalTransaksi',
