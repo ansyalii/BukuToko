@@ -58,7 +58,8 @@ class SPKController extends Controller
                 ->where('user_id', $userId)
                 ->first();
 
-            if (!$produk) continue;
+            if (!$produk)
+                continue;
 
             // Ambil data transaksi sama seperti di dashboard
             $transaksi = DB::table('transaksi_details')

@@ -34,6 +34,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/laporan/transaksi', [LaporanController::class, 'transaksi'])->name('laporan.transaksi');
     Route::post('/laporan/transaksi', [LaporanController::class, 'store'])->name('laporan.transaksi.store');
     Route::get('/laporan/print', [App\Http\Controllers\LaporanController::class, 'print'])->name('laporan.print');
+    Route::post('/laporan/tambah-modal', [App\Http\Controllers\LaporanController::class, 'storeModal'])->name('laporan.tambahModal');
 });
 
 Route::middleware(['auth'])->group(function () {

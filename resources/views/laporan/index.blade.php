@@ -3,6 +3,20 @@
 @section('content')
     <div class="mb-6">
         <h2 class="text-2xl font-bold text-gray-800">Laporan Penjualan & Laba</h2>
+
+        {{-- flash message optional --}}
+        @if (session('success'))
+            <div class="mt-3 bg-green-100 text-green-800 px-4 py-2 rounded">{{ session('success') }}</div>
+        @endif
+        @if ($errors->any())
+            <div class="mt-3 bg-red-100 text-red-800 px-4 py-2 rounded">
+                <ul class="list-disc pl-5">
+                    @foreach ($errors->all() as $e)
+                        <li>{{ $e }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
     </div>
 
     <!-- Filter tanggal -->
@@ -22,14 +36,19 @@
                 Filter
             </button>
         </div>
-        <div class="col-span-2 md:col-span-1">
+
+        {{-- PRINT + TAMBAH MODAL (disamping) --}}
+        <div class="col-span-2 md:col-span-1 flex gap-2">
             <a href="{{ route('laporan.print', request()->query()) }}" target="_blank"
-                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm shadow">
+                class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm shadow text-center">
                 Print Laporan
             </a>
+            <button type="button" onclick="document.getElementById('modalTambahModal').classList.remove('hidden')"
+                class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm shadow text-center">
+                Tambah Modal
+            </button>
         </div>
     </form>
-
 
     <!-- Ringkasan -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -47,7 +66,6 @@
         </div>
     </div>
 
-
     <!-- Tabel Transaksi -->
     <div class="bg-white rounded shadow overflow-x-auto">
         <table class="min-w-full text-left text-sm border border-gray-300">
@@ -63,12 +81,19 @@
             <tbody>
                 @forelse($transaksi as $trx)
                     <tr>
-                        <td class="py-2 px-4 border">{{ $trx->created_at->format('d/m/Y') }}</td>
+                        {{-- gunakan tanggal; fallback created_at kalau perlu --}}
+                        <td class="py-2 px-4 border">
+                            {{ $trx->tanggal ? \Carbon\Carbon::parse($trx->tanggal)->format('d/m/Y') : $trx->created_at->format('d/m/Y') }}
+                        </td>
                         <td class="py-2 px-4 border">{{ $trx->kode_transaksi }}</td>
                         <td class="py-2 px-4 border">
-                            @foreach($trx->details as $detail)
-                                {{ $detail->product->nama ?? '-' }}: {{ $detail->jumlah }} {{ $detail->satuan ?? '' }}<br>
-                            @endforeach
+                            @if($trx->details->isEmpty())
+                                {{ $trx->deskripsi ?? '-' }}
+                            @else
+                                @foreach($trx->details as $detail)
+                                    {{ $detail->product->nama ?? '-' }}: {{ $detail->jumlah }} {{ $detail->satuan ?? '' }}<br>
+                                @endforeach
+                            @endif
                         </td>
                         <td class="py-2 px-4 border">
                             @if($trx->jenis === 'pemasukan')
@@ -95,6 +120,45 @@
         <div class="mt-4">
             {{ $transaksi->links() }}
         </div>
+    </div>
 
+    {{-- MODAL: Tambah Modal (form pemasukan tanpa detail produk) --}}
+    <div id="modalTambahModal" class="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold">Tambah Modal</h3>
+                <button type="button" class="text-gray-500 hover:text-gray-700"
+                    onclick="document.getElementById('modalTambahModal').classList.add('hidden')">✕</button>
+            </div>
+
+            <form action="{{ route('laporan.tambahModal') }}" method="POST" class="space-y-4">
+                @csrf
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Tanggal</label>
+                    <input type="date" name="tanggal" value="{{ now()->format('Y-m-d') }}" required
+                        class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring focus:border-blue-400">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Jumlah Modal</label>
+                    <input type="number" name="jumlah" step="0.01" min="1" required
+                        class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring focus:border-blue-400">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Keterangan (opsional)</label>
+                    <input type="text" name="deskripsi" placeholder="Modal Awal / Tambahan Modal"
+                        class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring focus:border-blue-400">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="document.getElementById('modalTambahModal').classList.add('hidden')"
+                        class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
+                        Batal
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 rounded hover:bg-gray-300 text-white">
+                        Simpan
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 @endsection

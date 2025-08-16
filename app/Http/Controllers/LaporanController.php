@@ -75,7 +75,8 @@ class LaporanController extends Controller
         $user_id = Auth::id();
 
         // Hanya eksekusi tanggal 1
-        if ($today->day != 1) return;
+        if ($today->day != 1)
+            return;
 
         // Cek apakah saldo pindahan bulan ini sudah ada
         $saldoExist = Transaksi::where('user_id', $user_id)
@@ -84,7 +85,8 @@ class LaporanController extends Controller
             ->where('deskripsi', 'like', '%Saldo Pindahan%')
             ->exists();
 
-        if ($saldoExist) return; // sudah ada, tidak buat lagi
+        if ($saldoExist)
+            return; // sudah ada, tidak buat lagi
 
         // Hitung saldo bulan sebelumnya
         $startPrevMonth = $today->copy()->subMonthNoOverflow()->startOfMonth();
@@ -102,7 +104,8 @@ class LaporanController extends Controller
 
         $saldo = $totalPemasukan - $totalPengeluaran;
 
-        if ($saldo <= 0) return; // tidak buat saldo jika negatif atau nol
+        if ($saldo <= 0)
+            return; // tidak buat saldo jika negatif atau nol
 
         // Buat transaksi saldo pindahan
         Transaksi::create([
@@ -113,6 +116,29 @@ class LaporanController extends Controller
             'deskripsi' => 'Saldo Pindahan Bulan Lalu',
             'total_harga' => $saldo,
         ]);
+    }
+    public function storeModal(Request $request)
+    {
+        $request->validate([
+            'tanggal' => 'required|date',
+            'jumlah' => 'required|numeric|min:1',
+            'deskripsi' => 'nullable|string|max:255',
+        ]);
+
+        $user_id = Auth::id();
+        $kode_transaksi = $this->generateKodeTransaksi('pemasukan');
+
+        // Buat transaksi modal
+        Transaksi::create([
+            'kode_transaksi' => $kode_transaksi,
+            'user_id' => $user_id,
+            'jenis' => 'pemasukan',
+            'tanggal' => $request->tanggal,
+            'deskripsi' => $request->deskripsi ?: 'Modal Awal',
+            'total_harga' => $request->jumlah,
+        ]);
+
+        return redirect()->route('laporan.index')->with('success', 'Modal berhasil ditambahkan.');
     }
     private function generateKodeTransaksi($jenis)
     {
@@ -168,91 +194,92 @@ class LaporanController extends Controller
 
 
     public function store(Request $request)
-{
-    $request->validate([
-        'jenis' => 'required|in:pemasukan,pengeluaran',
-        'tanggal' => 'required|date',
-        'deskripsi' => 'required|string',
-        'qty' => 'required|array',
-        'qty.*' => 'required|numeric|min:0.01',
-        'satuan' => 'required|array',
-        'satuan.*' => 'required|string',
-    ]);
-
-    $jenis = $request->jenis;
-    $tanggal = $request->tanggal;
-    $deskripsi = $request->deskripsi;
-    $user_id = Auth::id();
-
-    $produk_ids = $request->input('produk_id', []); // bisa kosong untuk produk baru
-    $nama_baru = $request->input('produk_nama_baru', []); // array produk baru
-    $harga_baru = $request->input('harga_baru', []); // array harga produk baru
-    $qtys = $request->qty;
-    $satuans = $request->satuan;
-
-    // Buat kode transaksi unik
-    $kode_transaksi = $this->generateKodeTransaksi($jenis);
-
-    // Buat transaksi utama
-    $transaksi = Transaksi::create([
-        'kode_transaksi' => $kode_transaksi,
-        'user_id' => $user_id,
-        'jenis' => $jenis,
-        'tanggal' => $tanggal,
-        'deskripsi' => $deskripsi,
-        'total_harga' => 0, // nanti dijumlahkan dari detail
-    ]);
-
-    $total = 0;
-    foreach ($qtys as $index => $qty) {
-        $produk_id = $produk_ids[$index] ?? null;
-        $satuan = $satuans[$index];
-
-        // Jika produk baru, simpan dulu ke products
-        if (!$produk_id && isset($nama_baru[$index], $harga_baru[$index])) {
-            $produk = Product::create([
-                'user_id' => $user_id,
-                'nama' => $nama_baru[$index],
-                'satuan' => $satuan,
-                'harga_jual' => $harga_baru[$index],
-                'harga_beli' => $harga_baru[$index],
-                'stok' => 0,
-            ]);
-            $produk_id = $produk->id;
-        } else {
-            $produk = Product::find($produk_id);
-            if (!$produk) continue;
-        }
-
-        $harga = $jenis === 'pemasukan' ? $produk->harga_jual : $produk->harga_beli;
-        $subtotal = $harga * $qty;
-        $total += $subtotal;
-
-        // Buat transaksi detail
-        TransaksiDetail::create([
-            'transaksi_id' => $transaksi->id,
-            'product_id' => $produk->id,
-            'jumlah' => $qty,
-            'subtotal' => $subtotal,
-            'deskripsi' => ($jenis === 'pemasukan' ? "Penjualan" : "Pembelian") . ": $produk->nama $qty $satuan",
+    {
+        $request->validate([
+            'jenis' => 'required|in:pemasukan,pengeluaran',
+            'tanggal' => 'required|date',
+            'deskripsi' => 'required|string',
+            'qty' => 'required|array',
+            'qty.*' => 'required|numeric|min:0.01',
+            'satuan' => 'required|array',
+            'satuan.*' => 'required|string',
         ]);
 
-        // Update stok
-        if ($jenis === 'pemasukan') {
-            $produk->stok -= $qty;
-        } else {
-            $produk->stok += $qty;
+        $jenis = $request->jenis;
+        $tanggal = $request->tanggal;
+        $deskripsi = $request->deskripsi;
+        $user_id = Auth::id();
+
+        $produk_ids = $request->input('produk_id', []); // bisa kosong untuk produk baru
+        $nama_baru = $request->input('produk_nama_baru', []); // array produk baru
+        $harga_baru = $request->input('harga_baru', []); // array harga produk baru
+        $qtys = $request->qty;
+        $satuans = $request->satuan;
+
+        // Buat kode transaksi unik
+        $kode_transaksi = $this->generateKodeTransaksi($jenis);
+
+        // Buat transaksi utama
+        $transaksi = Transaksi::create([
+            'kode_transaksi' => $kode_transaksi,
+            'user_id' => $user_id,
+            'jenis' => $jenis,
+            'tanggal' => $tanggal,
+            'deskripsi' => $deskripsi,
+            'total_harga' => 0, // nanti dijumlahkan dari detail
+        ]);
+
+        $total = 0;
+        foreach ($qtys as $index => $qty) {
+            $produk_id = $produk_ids[$index] ?? null;
+            $satuan = $satuans[$index];
+
+            // Jika produk baru, simpan dulu ke products
+            if (!$produk_id && isset($nama_baru[$index], $harga_baru[$index])) {
+                $produk = Product::create([
+                    'user_id' => $user_id,
+                    'nama' => $nama_baru[$index],
+                    'satuan' => $satuan,
+                    'harga_jual' => $harga_baru[$index],
+                    'harga_beli' => $harga_baru[$index],
+                    'stok' => 0,
+                ]);
+                $produk_id = $produk->id;
+            } else {
+                $produk = Product::find($produk_id);
+                if (!$produk)
+                    continue;
+            }
+
+            $harga = $jenis === 'pemasukan' ? $produk->harga_jual : $produk->harga_beli;
+            $subtotal = $harga * $qty;
+            $total += $subtotal;
+
+            // Buat transaksi detail
+            TransaksiDetail::create([
+                'transaksi_id' => $transaksi->id,
+                'product_id' => $produk->id,
+                'jumlah' => $qty,
+                'subtotal' => $subtotal,
+                'deskripsi' => ($jenis === 'pemasukan' ? "Penjualan" : "Pembelian") . ": $produk->nama $qty $satuan",
+            ]);
+
+            // Update stok
+            if ($jenis === 'pemasukan') {
+                $produk->stok -= $qty;
+            } else {
+                $produk->stok += $qty;
+            }
+            $produk->save();
         }
-        $produk->save();
+
+        // Update total_harga transaksi utama
+        $transaksi->update(['total_harga' => $total]);
+
+        $this->recalcAllProductMetricsWeekly();
+
+        return redirect()->route('laporan.transaksi')->with('success', 'Transaksi berhasil disimpan.');
     }
-
-    // Update total_harga transaksi utama
-    $transaksi->update(['total_harga' => $total]);
-
-    $this->recalcAllProductMetricsWeekly();
-
-    return redirect()->route('laporan.transaksi')->with('success', 'Transaksi berhasil disimpan.');
-}
     public function print(Request $request)
     {
         $query = Transaksi::with('details.product');
