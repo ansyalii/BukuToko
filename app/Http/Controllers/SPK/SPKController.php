@@ -17,7 +17,7 @@ class SPKController extends Controller
     {
         $userId = Auth::id();
         $bobot = SpkKriteria::where('user_id', $userId)->get();
-        $hasil = $this->hitungWP() ?? []; // pastikan selalu array
+        $hasil = $this->hitungWP() ?? []; // selalu array
 
         return view('spk.index', compact('bobot', 'hasil'));
     }
@@ -29,7 +29,6 @@ class SPKController extends Controller
         $hasil = $this->hitungWP();
 
         if ($hasil === null) {
-            $hasil = [];
             return redirect()->route('spk.index')->with('error', 'Bobot kriteria belum ada, silakan isi bobot AHP.');
         }
 
@@ -47,6 +46,7 @@ class SPKController extends Controller
 
         $bobot = SpkKriteria::where('user_id', $userId)->pluck('bobot')->toArray();
 
+        // validasi jumlah kriteria
         if (count($bobot) !== 4) {
             return null;
         }
@@ -61,7 +61,7 @@ class SPKController extends Controller
             if (!$produk)
                 continue;
 
-            // Ambil data transaksi sama seperti di dashboard
+            // ambil transaksi minggu ini
             $transaksi = DB::table('transaksi_details')
                 ->join('transaksis', 'transaksi_details.transaksi_id', '=', 'transaksis.id')
                 ->where('transaksi_details.product_id', $produk->id)
@@ -83,21 +83,12 @@ class SPKController extends Controller
                 ->distinct()
                 ->count(DB::raw('DATE(transaksis.created_at)'));
 
-            // Kecepatan sama seperti di dashboard (total terjual dibagi hari terjual)
             $kecepatan = $transaksi->hari_terjual > 0
                 ? $transaksi->total_terjual / $transaksi->hari_terjual
                 : 0;
 
             $keuntungan = floatval(($produk->harga_jual ?? 0) - ($produk->harga_beli ?? 0));
             $hargaBeli = floatval($produk->harga_beli ?? 1);
-
-            $nilai = [$frekuensi, $keuntungan, $kecepatan, $hargaBeli];
-            $skor = 1;
-
-            foreach ($nilai as $i => $v) {
-                $bobot_i = $i === 3 ? -$bobot[$i] : $bobot[$i]; // harga dianggap cost
-                $skor *= pow(max($v, 1), $bobot_i);
-            }
 
             $hasil[] = [
                 'alternatif_id' => $alt->id,
@@ -107,19 +98,46 @@ class SPKController extends Controller
                 'kecepatan' => round($kecepatan, 2),
                 'keuntungan' => $keuntungan,
                 'harga_beli' => $hargaBeli,
-                'skor' => $skor,
             ];
         }
 
-        $totalSkor = array_sum(array_column($hasil, 'skor'));
+        if (empty($hasil)) {
+            return null;
+        }
 
+        // --- Normalisasi kriteria (benefit/cost) ---
+        $maxFrekuensi = max(array_column($hasil, 'frekuensi'));
+        $maxKecepatan = max(array_column($hasil, 'kecepatan'));
+        $maxKeuntungan = max(array_column($hasil, 'keuntungan'));
+        $minHarga = min(array_column($hasil, 'harga_beli'));
+
+        foreach ($hasil as &$row) {
+            $nFrekuensi = $maxFrekuensi > 0 ? $row['frekuensi'] / $maxFrekuensi : 0;
+            $nKecepatan = $maxKecepatan > 0 ? $row['kecepatan'] / $maxKecepatan : 0;
+            $nKeuntungan = $maxKeuntungan > 0 ? $row['keuntungan'] / $maxKeuntungan : 0;
+            $nHarga = $row['harga_beli'] > 0 ? $minHarga / $row['harga_beli'] : 0;
+
+            // hitung WP (perkalian normalisasi^bobot)
+            $skor = pow($nFrekuensi, $bobot[0]) *
+                pow($nKeuntungan, $bobot[1]) *
+                pow($nKecepatan, $bobot[2]) *
+                pow($nHarga, $bobot[3]);
+
+            $row['skor'] = $skor;
+        }
+        unset($row);
+
+        // normalisasi skor (vektor V)
+        $totalSkor = array_sum(array_column($hasil, 'skor'));
         foreach ($hasil as &$row) {
             $row['nilai_normalisasi'] = $totalSkor > 0 ? round($row['skor'] / $totalSkor, 3) : 0;
         }
+        unset($row);
 
+        // urutkan berdasarkan vektor V
         usort($hasil, fn($a, $b) => $b['nilai_normalisasi'] <=> $a['nilai_normalisasi']);
 
-        return collect($hasil)->unique('produk_id')->sortByDesc('nilai_normalisasi')->values()->all();
+        return $hasil;
     }
 
     public function reset()
