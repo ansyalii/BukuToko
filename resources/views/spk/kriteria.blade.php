@@ -56,7 +56,7 @@
             @csrf
 
             @php
-                $kriteria = \App\Models\SPKKriteria::pluck('nama_kriteria')->toArray();
+                $kriteria = \App\Models\SpkKriteria::pluck('nama_kriteria')->toArray();
                 $n = count($kriteria);
             @endphp
 

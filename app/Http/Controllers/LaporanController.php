@@ -282,7 +282,8 @@ class LaporanController extends Controller
     }
     public function print(Request $request)
     {
-        $query = Transaksi::with('details.product');
+        $query = Transaksi::with('details.product')
+            ->where('user_id', Auth::id());
 
         if ($request->filled('dari'))
             $query->whereDate('created_at', '>=', $request->dari);
