@@ -142,7 +142,7 @@ class SPKController extends Controller
 
     public function reset()
     {
-        $userId = auth()->id();
+        $userId = Auth::id();
 
         SpkAlternatif::where('user_id', $userId)->delete();
         SpkNilaiAkhir::where('user_id', $userId)->delete();

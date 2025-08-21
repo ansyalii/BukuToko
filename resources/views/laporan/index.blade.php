@@ -43,7 +43,7 @@
                 class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm shadow text-center">
                 Print Laporan
             </a>
-            <button type="button" onclick="document.getElementById('modalTambahModal').classList.remove('hidden')"
+            <button type="button" onclick="openModal()"
                 class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm shadow text-center">
                 Tambah Modal
             </button>
@@ -123,12 +123,11 @@
     </div>
 
     {{-- MODAL: Tambah Modal (form pemasukan tanpa detail produk) --}}
-    <div id="modalTambahModal" class="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center hidden z-50">
+    <div id="modalTambahModal" class="fixed inset-0 bg-white bg-opacity-80 items-center justify-center hidden z-50">
         <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">Tambah Modal</h3>
-                <button type="button" class="text-gray-500 hover:text-gray-700"
-                    onclick="document.getElementById('modalTambahModal').classList.add('hidden')">✕</button>
+                <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeModal()">✕</button>
             </div>
 
             <form action="{{ route('laporan.tambahModal') }}" method="POST" class="space-y-4">
@@ -150,15 +149,27 @@
                 </div>
 
                 <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" onclick="document.getElementById('modalTambahModal').classList.add('hidden')"
-                        class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
                         Batal
                     </button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 rounded hover:bg-gray-300 text-white">
+                    <button type="submit" class="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 text-white">
                         Simpan
                     </button>
                 </div>
             </form>
         </div>
     </div>
+
+    <script>
+        function openModal() {
+            const modal = document.getElementById('modalTambahModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex'); // baru ditambahkan saat open
+        }
+        function closeModal() {
+            const modal = document.getElementById('modalTambahModal');
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+        }
+    </script>
 @endsection
